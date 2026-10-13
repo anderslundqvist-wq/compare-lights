@@ -67,7 +67,14 @@ h1{font-size:clamp(28px,4vw,42px);line-height:1.05;letter-spacing:-.025em;font-w
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .fam[aria-pressed="true"]{background:var(--yellow);border-color:var(--yellow);color:#202020}}
 .list{max-height:560px;overflow:auto;overscroll-behavior:contain}
 @media (max-width:900px){.list{max-height:300px}}
-.group-title{position:sticky;top:0;background:var(--surface);font-size:12.5px;color:var(--muted);padding:10px 16px 6px;border-bottom:1px solid var(--line);font-weight:600;z-index:1}
+.group-title{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--surface);border:0;border-bottom:1px solid var(--line);padding:12px 16px;font-size:14px;font-weight:700;color:var(--ink);cursor:pointer}
+.group-title:hover{background:var(--hover)}
+.group-title .ct{margin-left:auto;font-weight:500;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.group-title .sel-dots{display:flex;gap:3px}
+.group-title .sel-dots i{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.group-title svg{flex:none;width:12px;height:12px;transition:transform .15s}
+.group-title[aria-expanded="true"] svg{transform:rotate(90deg)}
+.group-title[aria-expanded="true"]{background:var(--bg)}
 .item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;width:100%;text-align:left;padding:10px 16px;border:0;border-bottom:1px solid var(--line);background:transparent;cursor:pointer}
 .item:hover{background:var(--hover)}
 .item[disabled]{cursor:not-allowed;opacity:.45}
@@ -355,7 +362,7 @@ const AL = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_';
 const HALF = [0,1,2,3,4,5,6.5,8,10,12.5,15,18,22,27,33,40,50,62,75,88];
 const ANGS = [...HALF.slice(1).reverse().map(a=>-a), ...HALF];
 const LUX = [0.25,1,2.5,10];
-const COLORS = ['#FFCE00','#FFFFFF','#E58A13','#1EA612'];
+const COLORS = ['#FFCE00','#FFFFFF','#E81818','#1EA612'];
 const FAMG = [null,[0,1,2],[3,4,5],[6,7,8],[9,10,11],[32]];
 const ORDER = [0,1,2,3,4,5,6,7,8,9,10,11,32];
 
@@ -370,6 +377,7 @@ const LAMPS = RAW.map(([id,g,R,W,code,name])=>{
   const base=splitName(name);
   const l={id,g,R,W,rel,name,base,loc:{}};
   LANGS.forEach(lg=>{l.loc[lg]={title:trName(base.title,lg),spec:trName(base.spec,lg)};});
+  l.pure=/purelux/i.test(name);
   l.search=(name+' '+LANGS.map(lg=>l.loc[lg].title+' '+l.loc[lg].spec).join(' ')).toLowerCase();
   let fmax=0;rel.forEach((v,i)=>{fmax=Math.max(fmax,v*Math.cos(ANGS[i]*Math.PI/180));});
   l.rad=rel.map(v=>v*(fmax>0?R/fmax:R));
@@ -383,7 +391,7 @@ function guessLang(){
   const n=(navigator.language||'sv').toLowerCase().slice(0,2);
   return ({sv:'sv',fi:'fi',de:'de',da:'da',nb:'no',nn:'no',no:'no',en:'en'})[n]||'sv';
 }
-const state = {sel:[12643,6077,6350], lux:1, fam:0, q:'', allLevels:false, lang:guessLang()};
+const state = {sel:[12643,6077,6350], lux:1, fam:0, q:'', allLevels:false, lang:guessLang(), open:new Set(), focus:null};
 try{
   const h=new URLSearchParams(location.hash.slice(1));
   const ids=(h.get('l')||'').split(',').map(Number).filter(x=>BYID.has(x)).slice(0,4);
@@ -437,9 +445,12 @@ function renderList(){
   let html='',count=0;
   ORDER.forEach(g=>{
     if(fam && !fam.includes(g)) return;
-    const items=LAMPS.filter(l=>l.g===g && terms.every(x=>l.search.includes(x))).sort((a,b)=>b.R-a.R);
+    const items=LAMPS.filter(l=>l.g===g && terms.every(x=>l.search.includes(x))).sort((a,b)=>(b.pure-a.pure)||(b.R-a.R));
     if(!items.length) return;
-    html+=`<div class="group-title">${esc(t.groups[g])}</div>`;
+    const open=terms.length>0||state.open.has(g);
+    const dots=items.filter(l=>state.sel.includes(l.id)).map(l=>`<i style="--c:${colorOf(l.id)}"></i>`).join('');
+    html+=`<button class="group-title" data-g="${g}" aria-expanded="${open}"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>${esc(t.groups[g])}<span class="ct">${items.length}</span>${dots?`<span class="sel-dots">${dots}</span>`:''}</button>`;
+    if(!open){count+=items.length;return;}
     items.forEach(l=>{
       count++;const on=state.sel.includes(l.id);const n=L(l);
       html+=`<button class="item${on?' on':''}" data-id="${l.id}" ${(!on&&full)?'disabled':''} style="--c:${on?colorOf(l.id):''}" aria-pressed="${on}">
@@ -451,6 +462,7 @@ function renderList(){
   else if(full) html=`<div class="empty" style="padding:10px 16px;border-bottom:1px solid var(--line)">${esc(t.full)}</div>`+html;
   list.innerHTML=html;
   list.querySelectorAll('.item').forEach(b=>b.onclick=()=>toggle(+b.dataset.id));
+  list.querySelectorAll('.group-title').forEach(b=>b.onclick=()=>{const g=+b.dataset.g;if(state.q){return;}state.open.has(g)?state.open.delete(g):state.open.add(g);renderList();});
 }
 function toggle(id){
   const i=state.sel.indexOf(id);
@@ -477,7 +489,9 @@ function renderChips(){
   if(!state.sel.length){el.innerHTML=`<span class="hint">${esc(t.chipHint)}</span>`;return;}
   el.innerHTML=state.sel.map(id=>{const l=BYID.get(id),n=L(l);return `<span class="chip" style="--c:${colorOf(id)}"><i></i><span title="${esc(n.title+(n.spec?' - '+n.spec:''))}">${esc(n.title)}</span><button aria-label="${esc(t.remove+' '+n.title)}" data-id="${id}">×</button></span>`}).join('');
   el.querySelectorAll('button').forEach(b=>b.onclick=()=>toggle(+b.dataset.id));
+  el.querySelectorAll('.chip').forEach((c,i)=>{const id=state.sel[i];c.onmouseenter=()=>setFocus(id);c.onmouseleave=()=>setFocus(null);});
 }
+function setFocus(id){if(state.focus===id)return;state.focus=id;draw();}
 
 /* ---------- Table ---------- */
 function renderTable(){
@@ -491,13 +505,14 @@ function renderTable(){
     LUX.map(l=>`<th>${luxStr(l)} lx</th>`).join('')+`<th></th></tr></thead><tbody>`;
   ls.forEach(l=>{
     const n=L(l);
-    h+=`<tr><td class="lamp"><div class="nm" style="--c:${colorOf(l.id)}"><i></i>${esc(n.title)}</div>${n.spec?`<div class="sp">${esc(n.spec)}</div>`:''}</td>
+    h+=`<tr data-id="${l.id}"><td class="lamp"><div class="nm" style="--c:${colorOf(l.id)}"><i></i>${esc(n.title)}</div>${n.spec?`<div class="sp">${esc(n.spec)}</div>`:''}</td>
       <td class="main">${fmt(l.R*kk)} m${bestR===l?`<span class="best">${esc(t.best)}</span>`:''}<span class="bar"><b style="width:${l.R/maxR*100}%"></b></span></td>
       <td class="main">${fmt(l.W*kk)} m${bestW===l?`<span class="best">${esc(t.widest)}</span>`:''}<span class="bar"><b style="width:${l.W/maxW*100}%"></b></span></td>`+
       LUX.map(x=>`<td class="${x===state.lux?'sel':''}">${fmt(l.R*k(x))} m</td>`).join('')+
       `<td><a class="go" href="${SITE[state.lang]}/p/${l.id}" target="_blank" rel="noopener">${esc(t.go)}</a></td></tr>`;
   });
   tb.innerHTML=h+'</tbody>';
+  tb.querySelectorAll('tr[data-id]').forEach(r=>{r.onmouseenter=()=>setFocus(+r.dataset.id);r.onmouseleave=()=>setFocus(null);});
 }
 
 /* ---------- Canvas ---------- */
@@ -525,9 +540,9 @@ function hexA(h,a){const n=parseInt(h.slice(1),16);return `rgba(${n>>16&255},${n
 function draw(){
   ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,W,H);
   const padL=W<500?44:58,padR=18,padT=18,padB=34;
-  const ls=state.sel.map(id=>BYID.get(id));const kk=k(state.lux);
+  const ls=state.sel.map(id=>BYID.get(id));const kk=view.k;
   let maxF=100,maxS=10;
-  ls.forEach(l=>{shapePts(l,kk).forEach(([f,s])=>{maxF=Math.max(maxF,f);maxS=Math.max(maxS,Math.abs(s));});});
+  ls.forEach(l=>{shapePts(l,1).forEach(([f,s])=>{maxF=Math.max(maxF,f);maxS=Math.max(maxS,Math.abs(s));});});
   maxF*=1.06;maxS*=1.18;
   const sx=(W-padL-padR)/maxF,sy=(H-padT-padB)/2/maxS;
   const ox=padL,oy=padT+(H-padT-padB)/2;
@@ -552,9 +567,12 @@ function draw(){
   ctx.fillText('0',ox-8,oy);
 
   ctx.save();ctx.beginPath();ctx.rect(ox,padT-4,W-padR-ox,H-padT-padB+8);ctx.clip();
-  ctx.globalCompositeOperation='lighter';
-  ls.forEach((l,i)=>{
+  const drawOrder=ls.map((l,i)=>({l,i})).sort((a,b)=>(b.l.R*b.l.W)-(a.l.R*a.l.W));
+  if(state.focus!=null){const fi=drawOrder.findIndex(o=>o.l.id===state.focus);if(fi>=0)drawOrder.push(drawOrder.splice(fi,1)[0]);}
+  drawOrder.forEach(({l,i})=>{
     const c=COLORS[i];const g=grow[l.id]??1;const e=1-Math.pow(1-g,3);
+    const dim=state.focus!=null&&state.focus!==l.id, foc=state.focus===l.id;
+    ctx.globalAlpha=dim?0.18:1;
     if(state.allLevels){
       LUX.filter(x=>x!==state.lux).forEach(x=>{
         const p=shapePts(l,k(x)*e);ctx.beginPath();p.forEach(([f,s],j)=>j?ctx.lineTo(X(f),Y(s)):ctx.moveTo(X(f),Y(s)));
@@ -565,9 +583,13 @@ function draw(){
     ctx.beginPath();p.forEach(([f,s],j)=>j?ctx.lineTo(X(f),Y(s)):ctx.moveTo(X(f),Y(s)));ctx.closePath();
     const reach=Math.max(...p.map(q=>q[0]));
     const grad=ctx.createLinearGradient(ox,0,X(Math.max(reach,1)),0);
-    grad.addColorStop(0,hexA(c,0.42));grad.addColorStop(0.55,hexA(c,0.20));grad.addColorStop(1,hexA(c,0.07));
-    ctx.fillStyle=grad;ctx.fill();ctx.strokeStyle=hexA(c,0.95);ctx.lineWidth=1.6;ctx.stroke();
+    const fa=foc?1.6:1;
+    grad.addColorStop(0,hexA(c,0.30*fa));grad.addColorStop(0.6,hexA(c,0.12*fa));grad.addColorStop(1,hexA(c,0.04*fa));
+    ctx.fillStyle=grad;ctx.fill();
+    ctx.lineJoin='round';ctx.strokeStyle='rgba(0,0,0,0.55)';ctx.lineWidth=foc?5:4;ctx.stroke();
+    ctx.strokeStyle=c;ctx.lineWidth=foc?3:2.2;ctx.stroke();
   });
+  ctx.globalAlpha=1;
   ctx.restore();
 
   ctx.fillStyle='#FFCE00';ctx.beginPath();ctx.arc(ox,oy,4,0,Math.PI*2);ctx.fill();
@@ -619,11 +641,14 @@ cv.addEventListener('pointermove',pointer);
 cv.addEventListener('pointerdown',pointer);
 cv.addEventListener('pointerleave',()=>{hover=null;draw();renderReadout();});
 
+const view={k:k(state.lux)};
 let anim=null;
 function animate(){
   const pending=Object.keys(grow).filter(id=>grow[id]<1);
-  if(!pending.length){anim=null;return;}
+  const target=k(state.lux);const dk=target-view.k;
+  if(!pending.length && Math.abs(dk)<0.002){view.k=target;draw();anim=null;return;}
   pending.forEach(id=>{grow[id]=reduce?1:Math.min(1,grow[id]+1/36);});
+  view.k=reduce?target:view.k+dk*0.16;
   draw();anim=requestAnimationFrame(animate);
 }
 function update(){
